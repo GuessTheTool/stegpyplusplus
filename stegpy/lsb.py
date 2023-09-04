@@ -136,12 +136,13 @@ def format_message(message, msg_len, filename=None):
     return message
 
 
-def encode_message(host_data, message, bits):
+def encode_message(host_data, message, _):
     """Encodes the byte array in the image numpy array."""
     shape = host_data.shape
     host_data.shape = (-1,)  # convert to 1D
     uneven = 0
-    divisor = 8 // bits
+    bits = 2
+    divisor = 4
 
     print("Host dimension: {:,} bytes".format(host_data.size))
     print("Message size: {:,} bytes".format(len(message)))
@@ -150,7 +151,7 @@ def encode_message(host_data, message, bits):
     check_message_space(host_data.size // divisor, len(message))
 
     if (
-        host_data.size % divisor != 0
+            host_data.size % divisor != 0
     ):  # Hacky way to deal with pixel arrays that cannot be divided evenly
         uneven = 1
         original_size = host_data.size
@@ -162,11 +163,9 @@ def encode_message(host_data, message, bits):
 
     msg[: len(message)] = list(message)
 
-    host_data[: divisor * len(message)] &= 256 - 2**bits  # clear last bit(s)
+    host_data[: divisor * len(message)] &= 0b11111001
     for i in range(divisor):
-        host_data[i::divisor] |= msg >> bits * i & (
-            2**bits - 1
-        )  # copy bits to host_data
+        host_data[i::divisor] |= ((msg >> 2 * i) << 1) & 0b00000110
 
     operand = 0 if (bits == 1) else (16 if (bits == 2) else 32)
     host_data[0] = (host_data[0] & 207) | operand  # 5th and 6th bits = log_2(bits)
@@ -191,8 +190,8 @@ def check_message_space(max_message_len, message_len):
 def decode_message(host_data):
     """Decodes the image numpy array into a byte array."""
     host_data.shape = (-1,)  # convert to 1D
-    bits = 2 ** ((host_data[0] & 48) >> 4)  # bits = 2 ^ (5th and 6th bits)
-    divisor = 8 // bits
+    bits = 2
+    divisor = 4
 
     if host_data.size % divisor != 0:
         host_data = numpy.resize(
@@ -202,7 +201,7 @@ def decode_message(host_data):
     msg = numpy.zeros(len(host_data) // divisor, dtype=numpy.uint8)
 
     for i in range(divisor):
-        msg |= (host_data[i::divisor] & (2**bits - 1)) << bits * i
+        msg |= ((host_data[i::divisor] & 0b00000110) >> 1) << bits * i
 
     return msg
 
